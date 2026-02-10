@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useTrip, usePersons, useExpenses } from '../services/firebase';
 import { calculateBalances, optimizeSettlements } from '../services/calculations';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 export default function TripDetails() {
     // id is string from URL, which matches Firestore string IDs
