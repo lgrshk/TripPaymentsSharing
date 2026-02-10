@@ -60,7 +60,10 @@ export const CurrencyService = {
                 // fawazahmed0 API supports dates.
                 // https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/usd.json
 
-                // Construct URL for historical date
+                // Construct URL for historical date. 
+                // Note: The API format is `@{date}/v1/currencies/usd.json`
+                // Ensure dateStr is correct.
+
                 const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/usd.json`;
 
                 const response = await fetch(url);

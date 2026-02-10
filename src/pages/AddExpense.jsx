@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { db } from '../services/firebase';
+import { collection, addDoc } from 'firebase/firestore';
+import { usePersons } from '../services/firebase';
 import { CURRENCIES, CurrencyService } from '../services/currency';
 
 export default function AddExpense() {
-    const { id } = useParams();
-    const tripId = Number(id);
+    // Trip ID is string
+    const { id: tripId } = useParams();
     const navigate = useNavigate();
 
-    const persons = useLiveQuery(() => db.persons.where({ tripId }).toArray(), [tripId]);
+    const { persons, loading: loadingPersons } = usePersons(tripId);
 
     const [amount, setAmount] = useState('');
     const [currency, setCurrency] = useState('UAH'); // Default
@@ -18,6 +19,24 @@ export default function AddExpense() {
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [beneficiaries, setBeneficiaries] = useState([]); // IDs
     const [loading, setLoading] = useState(false);
+    const [rate, setRate] = useState(null);
+
+    // Fetch rate when currency or date changes
+    useEffect(() => {
+        const fetchRate = async () => {
+            if (currency === 'USD') {
+                setRate(1);
+                return;
+            }
+            try {
+                const r = await CurrencyService.getUsdRate(currency, date);
+                setRate(r);
+            } catch (e) {
+                setRate(null);
+            }
+        };
+        fetchRate();
+    }, [currency, date]);
 
     // Set default payer when persons load
     useEffect(() => {
@@ -61,16 +80,16 @@ export default function AddExpense() {
             // Warning: if 0, balance will be wrong.
 
             const val = parseFloat(amount);
-            const valInUSD = val * (distinctRate || 0); // If rate is defined as 1 Unit = X USD. 
+            const valInUSD = distinctRate ? val / distinctRate : 0;
             // Wait, getUsdRate returns "Value of 1 Unit in USD". e.g. 1 EUR = 1.1 USD.
             // So Amount * Rate = AmountInUSD. Correct.
 
-            await db.expenses.add({
+            await addDoc(collection(db, "expenses"), {
                 tripId,
                 date,
                 amount: val,
                 currency,
-                payerId: Number(payerId),
+                payerId, // String ID
                 description,
                 beneficiaryIds: beneficiaries,
                 amountInUSD: valInUSD,
@@ -86,7 +105,8 @@ export default function AddExpense() {
         }
     };
 
-    if (!persons) return <div>...</div>;
+    if (loadingPersons) return <div>Завантаження учасників...</div>;
+    if (!persons || persons.length === 0) return <div>Немає учасників.</div>;
 
     return (
         <div className="add-expense-page">
@@ -136,7 +156,7 @@ export default function AddExpense() {
 
                 <div className="form-group">
                     <label>Хто платив?</label>
-                    <select value={payerId} onChange={e => setPayerId(Number(e.target.value))}>
+                    <select value={payerId} onChange={e => setPayerId(e.target.value)}>
                         {persons.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                         ))}

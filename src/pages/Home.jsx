@@ -1,9 +1,10 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { useTrips } from '../services/firebase';
 import { Link } from 'react-router-dom';
 
 export default function Home() {
-    const trips = useLiveQuery(() => db.trips.toArray());
+    const { trips, loading } = useTrips();
+
+    if (loading) return <div>Завантаження...</div>;
 
     return (
         <div className="home-page">

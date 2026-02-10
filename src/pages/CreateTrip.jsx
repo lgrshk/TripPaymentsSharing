@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../db/db';
+import { db } from '../services/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import { CURRENCIES } from '../services/currency';
 
 export default function CreateTrip() {
@@ -24,19 +25,25 @@ export default function CreateTrip() {
         if (!name.trim()) return;
 
         try {
-            const tripId = await db.trips.add({
+            // Write to Firestore
+            const tripRef = await addDoc(collection(db, "trips"), {
                 name,
                 baseCurrency: currency,
                 startDate: new Date().toISOString()
             });
+            const tripId = tripRef.id;
 
             // Add persons
             const validPersons = persons.filter(p => p.trim() !== '');
             if (validPersons.length > 0) {
-                await db.persons.bulkAdd(validPersons.map(p => ({
-                    tripId,
-                    name: p.trim()
-                })));
+                // Bulk write not strictly necessary for UI, just await Promise.all
+                const promises = validPersons.map(p =>
+                    addDoc(collection(db, "persons"), {
+                        tripId,
+                        name: p.trim()
+                    })
+                );
+                await Promise.all(promises);
             }
 
             navigate(`/trip/${tripId}`);

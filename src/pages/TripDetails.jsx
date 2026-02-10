@@ -1,39 +1,41 @@
 import { useParams, Link } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { useTrip, usePersons, useExpenses } from '../services/firebase';
 import { calculateBalances, optimizeSettlements } from '../services/calculations';
 import { useState, useMemo } from 'react';
 
 export default function TripDetails() {
-    const { id } = useParams();
-    const tripId = Number(id);
+    // id is string from URL, which matches Firestore string IDs
+    const { id: tripId } = useParams();
 
-    const trip = useLiveQuery(() => db.trips.get(tripId), [tripId]);
-    const persons = useLiveQuery(() => db.persons.where({ tripId }).toArray(), [tripId]);
-    const expenses = useLiveQuery(() =>
-        db.expenses.where({ tripId }).reverse().sortBy('date'),
-        [tripId]
-    );
+    const { trip, loading: loadingTrip } = useTrip(tripId);
+    const { persons, loading: loadingPersons } = usePersons(tripId);
+    const { expenses, loading: loadingExpenses } = useExpenses(tripId);
 
     const [showSettlements, setShowSettlements] = useState(false);
 
+    const loading = loadingTrip || loadingPersons || loadingExpenses;
+
     // Calculate balances
     const { balances, settlements } = useMemo(() => {
-        if (!expenses || !persons) return { balances: {}, settlements: [] };
+        if (!expenses || !persons || loading) return { balances: {}, settlements: [] };
         const bal = calculateBalances(expenses, persons);
         const set = optimizeSettlements(bal);
         return { balances: bal, settlements: set };
-    }, [expenses, persons]);
+    }, [expenses, persons, loading]);
 
-    if (!trip) return <div>Завантаження...</div>;
+    if (loading) return <div>Завантаження...</div>;
+    if (!trip) return <div>Подорож не знайдено</div>;
 
-    const getPersonName = (id) => persons?.find(p => p.id === id)?.name || 'Невідомий';
+    const getPersonName = (id) => persons?.find(p => p.id == id)?.name || 'Невідомий';
 
     return (
         <div className="trip-details-page">
-            <header>
-                <Link to="/" className="back-link">← Назад</Link>
-                <h1>{trip.name}</h1>
+            <header style={{ justifyContent: 'space-between' }}>
+                <div>
+                    <Link to="/" className="back-link">← Назад</Link>
+                    <h1 style={{ margin: '0.5rem 0' }}>{trip.name}</h1>
+                </div>
+                <Link to={`/trip/${tripId}/edit`} style={{ fontSize: '1.5rem', textDecoration: 'none' }}>⚙️</Link>
             </header>
 
             <div className="balance-summary">
@@ -71,24 +73,26 @@ export default function TripDetails() {
                     <ul className="expenses-list">
                         {expenses.map(expense => (
                             <li key={expense.id} className="expense-item">
-                                <div className="expense-date">
-                                    {new Date(expense.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
-                                </div>
-                                <div className="expense-details">
-                                    <div className="expense-desc">{expense.description}</div>
-                                    <div className="expense-payer">
-                                        Сплатив: {getPersonName(expense.payerId)}
+                                <Link to={`/trip/${tripId}/expense/${expense.id}`} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div className="expense-date">
+                                        {new Date(expense.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
                                     </div>
-                                </div>
-                                <div className="expense-amount">
-                                    {expense.amount} {expense.currency}
-                                    <div className="expense-usd">~${expense.amountInUSD?.toFixed(2)}</div>
-                                </div>
+                                    <div className="expense-details">
+                                        <div className="expense-desc">{expense.description}</div>
+                                        <div className="expense-payer">
+                                            Сплатив: {getPersonName(expense.payerId)}
+                                        </div>
+                                    </div>
+                                    <div className="expense-amount">
+                                        {expense.amount} {expense.currency}
+                                        <div className="expense-usd">~${expense.amountInUSD?.toFixed(2)}</div>
+                                    </div>
+                                </Link>
                             </li>
                         ))}
                     </ul>
                 )}
             </div>
-        </div>
+        </div >
     );
 }
