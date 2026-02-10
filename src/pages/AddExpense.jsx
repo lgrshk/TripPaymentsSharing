@@ -60,29 +60,17 @@ export default function AddExpense() {
 
         setLoading(true);
         try {
-            // Get Rate
-            const rateToUSD = await CurrencyService.getUsdRate(currency, date);
-
-            // If offline and no rate, we might need to handle it. 
-            // For now, if rate is null, maybe ask user? Or assume 1?
-            // Design decision: If rate missing, store 0 or 1 and mark for update?
-            // Let's assume 1 if same as USD, else ... 
-            // Actually CurrencyService returns 1 for USD.
-
-            // If rate failed (offline + no cache), we'll save it with rate 0 
-            // and a flag 'needsRateUpdate'. But to simplify, let's just alert if 0.
-
-            // Wait, if I am offline in Sri Lanka paying Rupees, I might not have rate.
-            // Ideally I prompt user "Enter approximate rate to USD" or "Skip".
-            // Let's keep it simple: If rate is null, try to use a static fallback or just 0.
+            // Get Rate (don't block if fails)
+            let rateToUSD = null;
+            try {
+                rateToUSD = await CurrencyService.getUsdRate(currency, date);
+            } catch (e) {
+                console.warn("Could not fetch rate (offline?)", e);
+            }
 
             const distinctRate = rateToUSD || 0;
-            // Warning: if 0, balance will be wrong.
-
             const val = parseFloat(amount);
             const valInUSD = distinctRate ? val / distinctRate : 0;
-            // Wait, getUsdRate returns "Value of 1 Unit in USD". e.g. 1 EUR = 1.1 USD.
-            // So Amount * Rate = AmountInUSD. Correct.
 
             await addDoc(collection(db, "expenses"), {
                 tripId,

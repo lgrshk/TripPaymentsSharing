@@ -15,6 +15,43 @@ export default function TripDetails() {
 
     const loading = loadingTrip || loadingPersons || loadingExpenses;
 
+    // Detect missing rates and try to fix them in background
+    useEffect(() => {
+        if (loading || !expenses) return;
+
+        const expensesMissingRate = expenses.filter(e =>
+            e.currency !== 'USD' &&
+            (!e.exchangeRate || e.exchangeRate === 0 || !e.amountInUSD)
+        );
+
+        if (expensesMissingRate.length === 0) return;
+
+        const fixRates = async () => {
+            const { CurrencyService } = await import('../services/currency');
+            const { doc, updateDoc } = await import('firebase/firestore');
+            const { db } = await import('../services/firebase');
+
+            expensesMissingRate.forEach(async (exp) => {
+                try {
+                    console.log(`Attempting to fix rate for expense ${exp.id} (${exp.currency})`);
+                    const rate = await CurrencyService.getUsdRate(exp.currency, exp.date);
+                    if (rate && rate > 0) {
+                        const valInUSD = exp.amount / rate;
+                        await updateDoc(doc(db, "expenses", exp.id), {
+                            exchangeRate: rate,
+                            amountInUSD: valInUSD
+                        });
+                        console.log(`Fixed rate for expense ${exp.id}: ${rate}`);
+                    }
+                } catch (e) {
+                    console.warn(`Failed to auto-fix rate for ${exp.id}`, e);
+                }
+            });
+        };
+
+        fixRates();
+    }, [expenses, loading]);
+
     // Calculate balances
     const { balances, settlements } = useMemo(() => {
         if (!expenses || !persons || loading) return { balances: {}, settlements: [] };
