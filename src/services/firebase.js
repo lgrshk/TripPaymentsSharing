@@ -14,6 +14,8 @@ import {
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 
+import { getAuth, signInAnonymously } from "firebase/auth";
+
 const firebaseConfig = {
     apiKey: "AIzaSyDmWCRo7J_NolDqtphNGBAjQkpEEk7Ipro",
     authDomain: "trippaymentssharimg.firebaseapp.com",
@@ -25,6 +27,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 // Enable offline persistence
 try {
@@ -42,7 +45,7 @@ try {
     console.warn('Firebase persistence error:', e);
 }
 
-export { db };
+export { db, auth, signInAnonymously };
 
 // --- Custom Hooks for Firestore ---
 
