@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { useExpense, usePersons } from '../services/firebase';
+import { useTrip, useExpense, usePersons } from '../services/firebase';
 import { CURRENCIES, CurrencyService } from '../services/currency';
 
 export default function EditExpense() {
@@ -10,17 +10,23 @@ export default function EditExpense() {
     const { id: tripId, expenseId } = useParams();
     const navigate = useNavigate();
 
+    const { trip } = useTrip(tripId);
     const { expense, loading: loadingExpense } = useExpense(expenseId);
     const { persons, loading: loadingPersons } = usePersons(tripId);
 
     const [amount, setAmount] = useState('');
-    const [currency, setCurrency] = useState('UAH');
+    const [currency, setCurrency] = useState(trip?.baseCurrency || 'UAH');
     const [description, setDescription] = useState('');
     const [payerId, setPayerId] = useState('');
     const [date, setDate] = useState('');
     const [beneficiaries, setBeneficiaries] = useState([]);
     const [loading, setLoading] = useState(false);
     const [rate, setRate] = useState(null);
+
+    // Default currency from trip until expense loads
+    useEffect(() => {
+        if (trip?.baseCurrency && !expense) setCurrency(trip.baseCurrency);
+    }, [trip?.baseCurrency, expense]);
 
     // Fetch rate
     useEffect(() => {

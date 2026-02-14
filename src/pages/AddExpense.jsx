@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { collection, addDoc } from 'firebase/firestore';
-import { usePersons } from '../services/firebase';
+import { useTrip, usePersons } from '../services/firebase';
 import { CURRENCIES, CurrencyService } from '../services/currency';
 
 export default function AddExpense() {
@@ -10,16 +10,26 @@ export default function AddExpense() {
     const { id: tripId } = useParams();
     const navigate = useNavigate();
 
+    const { trip } = useTrip(tripId);
     const { persons, loading: loadingPersons } = usePersons(tripId);
 
     const [amount, setAmount] = useState('');
-    const [currency, setCurrency] = useState('UAH'); // Default
+    const [currency, setCurrency] = useState('UAH');
+    const hasSetDefaultCurrency = useRef(false);
     const [description, setDescription] = useState('');
     const [payerId, setPayerId] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [beneficiaries, setBeneficiaries] = useState([]); // IDs
     const [loading, setLoading] = useState(false);
     const [rate, setRate] = useState(null);
+
+    // Default currency from trip base currency (once when trip loads)
+    useEffect(() => {
+        if (trip?.baseCurrency && !hasSetDefaultCurrency.current) {
+            setCurrency(trip.baseCurrency);
+            hasSetDefaultCurrency.current = true;
+        }
+    }, [trip?.baseCurrency]);
 
     // Fetch rate when currency or date changes
     useEffect(() => {

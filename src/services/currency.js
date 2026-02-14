@@ -85,5 +85,33 @@ export const CurrencyService = {
         // Fallback? Maybe try to find closest date?
         // For now, return null
         return null;
+    },
+
+    /**
+     * Converts expenses (with amountInUSD) to trip base currency.
+     * Returns new array of expenses with amountInBase added.
+     * If baseCurrency is USD, amountInBase = amountInUSD.
+     * @param {Array} expenses - Expenses with amountInUSD, date
+     * @param {string} baseCurrency - Trip base currency code
+     * @returns {Promise<Array>} Expenses with amountInBase
+     */
+    async getExpensesInBaseCurrency(expenses, baseCurrency) {
+        if (!expenses || expenses.length === 0) return [];
+        if (baseCurrency === 'USD') {
+            return expenses.map(e => ({ ...e, amountInBase: e.amountInUSD ?? 0 }));
+        }
+        const uniqueDates = [...new Set(expenses.map(e => e.date))];
+        const rateByDate = {};
+        await Promise.all(
+            uniqueDates.map(async (dateStr) => {
+                const r = await this.getUsdRate(baseCurrency, dateStr);
+                rateByDate[dateStr] = r || 0;
+            })
+        );
+        return expenses.map(e => {
+            const rate = rateByDate[e.date] || 0;
+            const amountInBase = (e.amountInUSD ?? 0) * rate;
+            return { ...e, amountInBase };
+        });
     }
 };

@@ -1,6 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useTrip, usePersons, useExpenses } from '../services/firebase';
 import { calculateBalances, optimizeSettlements } from '../services/calculations';
+import { CurrencyService } from '../services/currency';
 import { useState, useMemo, useEffect } from 'react';
 
 export default function TripDetails() {
@@ -12,8 +13,23 @@ export default function TripDetails() {
     const { expenses, loading: loadingExpenses } = useExpenses(tripId);
 
     const [showSettlements, setShowSettlements] = useState(false);
+    const [expensesInBase, setExpensesInBase] = useState(null);
 
     const loading = loadingTrip || loadingPersons || loadingExpenses;
+    const baseCurrency = trip?.baseCurrency || 'USD';
+
+    // Convert expenses to trip base currency for balance calculation
+    useEffect(() => {
+        if (!expenses || !trip) {
+            setExpensesInBase(null);
+            return;
+        }
+        let cancelled = false;
+        CurrencyService.getExpensesInBaseCurrency(expenses, baseCurrency).then((converted) => {
+            if (!cancelled) setExpensesInBase(converted);
+        });
+        return () => { cancelled = true; };
+    }, [expenses, trip, baseCurrency]);
 
     // Detect missing rates and try to fix them in background
     useEffect(() => {
@@ -52,13 +68,15 @@ export default function TripDetails() {
         fixRates();
     }, [expenses, loading]);
 
-    // Calculate balances
+    // Calculate balances in base currency
     const { balances, settlements } = useMemo(() => {
-        if (!expenses || !persons || loading) return { balances: {}, settlements: [] };
-        const bal = calculateBalances(expenses, persons);
+        const list = expensesInBase ?? expenses;
+        const amountKey = expensesInBase ? 'amountInBase' : 'amountInUSD';
+        if (!list || !persons || loading) return { balances: {}, settlements: [] };
+        const bal = calculateBalances(list, persons, amountKey);
         const set = optimizeSettlements(bal);
         return { balances: bal, settlements: set };
-    }, [expenses, persons, loading]);
+    }, [expensesInBase, expenses, persons, loading]);
 
     if (loading) return <div>Завантаження...</div>;
     if (!trip) return <div>Подорож не знайдено</div>;
@@ -76,7 +94,7 @@ export default function TripDetails() {
             </header>
 
             <div className="balance-summary">
-                <h3>Баланс (USD)</h3>
+                <h3>Баланс ({baseCurrency})</h3>
                 <button className="secondary-button" onClick={() => setShowSettlements(!showSettlements)}>
                     {showSettlements ? 'Приховати розрахунки' : 'Хто кому винен'}
                 </button>
@@ -87,7 +105,7 @@ export default function TripDetails() {
                             <ul>
                                 {settlements.map((s, i) => (
                                     <li key={i}>
-                                        <strong>{getPersonName(s.from)}</strong> винен <strong>{getPersonName(s.to)}</strong>: ${s.amount.toFixed(2)}
+                                        <strong>{getPersonName(s.from)}</strong> винен <strong>{getPersonName(s.to)}</strong>: {s.amount.toFixed(2)} {baseCurrency}
                                     </li>
                                 ))}
                             </ul>
@@ -108,25 +126,31 @@ export default function TripDetails() {
                     <p className="empty-state">Немає витрат. Додайте першу!</p>
                 ) : (
                     <ul className="expenses-list">
-                        {expenses.map(expense => (
-                            <li key={expense.id} className="expense-item">
-                                <Link to={`/trip/${tripId}/expense/${expense.id}`} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div className="expense-date">
-                                        {new Date(expense.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
-                                    </div>
-                                    <div className="expense-details">
-                                        <div className="expense-desc">{expense.description}</div>
-                                        <div className="expense-payer">
-                                            Сплатив: {getPersonName(expense.payerId)}
+                        {expenses.map(expense => {
+                            const inBase = expensesInBase?.find(e => e.id === expense.id);
+                            const amountInBase = inBase?.amountInBase;
+                            return (
+                                <li key={expense.id} className="expense-item">
+                                    <Link to={`/trip/${tripId}/expense/${expense.id}`} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div className="expense-date">
+                                            {new Date(expense.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
                                         </div>
-                                    </div>
-                                    <div className="expense-amount">
-                                        {expense.amount} {expense.currency}
-                                        <div className="expense-usd">~${expense.amountInUSD?.toFixed(2)}</div>
-                                    </div>
-                                </Link>
-                            </li>
-                        ))}
+                                        <div className="expense-details">
+                                            <div className="expense-desc">{expense.description}</div>
+                                            <div className="expense-payer">
+                                                Сплатив: {getPersonName(expense.payerId)}
+                                            </div>
+                                        </div>
+                                        <div className="expense-amount">
+                                            {expense.amount} {expense.currency}
+                                            <div className="expense-usd">
+                                                {amountInBase != null ? `≈ ${amountInBase.toFixed(2)} ${baseCurrency}` : `~ $${expense.amountInUSD?.toFixed(2)}`}
+                                            </div>
+                                        </div>
+                                    </Link>
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </div>

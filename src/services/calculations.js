@@ -1,11 +1,12 @@
 
 /**
  * Calculates the balance for a trip.
- * @param {Array} expenses - List of expenses with amounts in USD.
+ * @param {Array} expenses - List of expenses with amountInBase (or amountInUSD when amountKey is 'amountInUSD').
  * @param {Array} persons - List of persons involved in the trip.
- * @returns {Object} balances - Map of personId -> amount (positive means they are owed, negative means they owe).
+ * @param {string} [amountKey='amountInBase'] - Field to use for amount ('amountInBase' or 'amountInUSD').
+ * @returns {Object} balances - Map of personId -> amount (positive = owed, negative = owe).
  */
-export function calculateBalances(expenses, persons) {
+export function calculateBalances(expenses, persons, amountKey = 'amountInBase') {
     const balances = {};
 
     // Initialize balances
@@ -13,7 +14,7 @@ export function calculateBalances(expenses, persons) {
 
     expenses.forEach(expense => {
         const payerId = expense.payerId;
-        const amount = expense.amountInUSD; // Assumes simple split for now
+        const amount = expense[amountKey] ?? expense.amountInUSD ?? 0;
         const beneficiaries = expense.beneficiaryIds || [];
 
         if (beneficiaries.length === 0) return;
