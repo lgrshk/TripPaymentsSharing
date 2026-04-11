@@ -120,3 +120,96 @@ export function optimizeFamilyAwareSettlements(balances, families) {
     const merged = mergeFamilyBalancesForSettlements(balances, families);
     return optimizeSettlements(merged);
 }
+
+/**
+ * Equal-split amounts each payer effectively covered for other beneficiaries (same rules as balances).
+ * @param {Array} expenses
+ * @param {string} [amountKey='amountInBase']
+ * @returns {Object<string, Object<string, number>>} payerId -> beneficiaryId -> total
+ */
+export function calculatePaidForMatrix(expenses, amountKey = 'amountInBase') {
+    const matrix = {};
+    expenses.forEach(expense => {
+        const payerId = expense.payerId;
+        const amount = expense[amountKey] ?? expense.amountInUSD ?? 0;
+        const beneficiaries = expense.beneficiaryIds || [];
+        if (beneficiaries.length === 0) return;
+
+        const splitAmount = amount / beneficiaries.length;
+        beneficiaries.forEach(benId => {
+            if (benId === payerId) return;
+            if (!matrix[payerId]) matrix[payerId] = {};
+            matrix[payerId][benId] = (matrix[payerId][benId] || 0) + splitAmount;
+        });
+    });
+
+    for (const p of Object.keys(matrix)) {
+        for (const b of Object.keys(matrix[p])) {
+            matrix[p][b] = Math.round(matrix[p][b] * 100) / 100;
+        }
+    }
+    return matrix;
+}
+
+function unitKeyForPerson(personId, families) {
+    if (!families || families.length === 0) return `person:${personId}`;
+    for (const f of families) {
+        const members = f.memberPersonIds || [];
+        if (members.includes(personId)) return `family:${f.id}`;
+    }
+    return `person:${personId}`;
+}
+
+/**
+ * Paid-for totals grouped by family as one unit (internal same-unit flows omitted).
+ * Keys are `person:<id>` or `family:<familyDocId>`.
+ */
+export function calculatePaidForMatrixFamilyUnits(expenses, families, amountKey = 'amountInBase') {
+    const matrix = {};
+    if (!families || families.length === 0) return matrix;
+
+    expenses.forEach(expense => {
+        const payerId = expense.payerId;
+        const amount = expense[amountKey] ?? expense.amountInUSD ?? 0;
+        const beneficiaries = expense.beneficiaryIds || [];
+        if (beneficiaries.length === 0) return;
+
+        const splitAmount = amount / beneficiaries.length;
+        const fromU = unitKeyForPerson(payerId, families);
+
+        beneficiaries.forEach(benId => {
+            if (benId === payerId) return;
+            const toU = unitKeyForPerson(benId, families);
+            if (fromU === toU) return;
+            if (!matrix[fromU]) matrix[fromU] = {};
+            matrix[fromU][toU] = (matrix[fromU][toU] || 0) + splitAmount;
+        });
+    });
+
+    for (const p of Object.keys(matrix)) {
+        for (const b of Object.keys(matrix[p])) {
+            matrix[p][b] = Math.round(matrix[p][b] * 100) / 100;
+        }
+    }
+    return matrix;
+}
+
+/**
+ * @param {Object<string, Object<string, number>>} matrix
+ * @returns {{ from: string, to: string, amount: number }[]}
+ */
+export function paidForMatrixToSortedRows(matrix) {
+    const rows = [];
+    Object.entries(matrix).forEach(([from, toMap]) => {
+        Object.entries(toMap).forEach(([to, amt]) => {
+            if (Math.abs(amt) < 0.005) return;
+            rows.push({ from, to, amount: amt });
+        });
+    });
+    rows.sort((a, b) => {
+        const c1 = a.from.localeCompare(b.from);
+        if (c1 !== 0) return c1;
+        return a.to.localeCompare(b.to);
+    });
+    return rows;
+}

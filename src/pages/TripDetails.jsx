@@ -1,6 +1,13 @@
 import { useParams, Link } from 'react-router-dom';
 import { useTrip, usePersons, useExpenses, useFamilies } from '../services/firebase';
-import { calculateBalances, optimizeSettlements, optimizeFamilyAwareSettlements } from '../services/calculations';
+import {
+    calculateBalances,
+    optimizeSettlements,
+    optimizeFamilyAwareSettlements,
+    calculatePaidForMatrix,
+    calculatePaidForMatrixFamilyUnits,
+    paidForMatrixToSortedRows
+} from '../services/calculations';
 import { CurrencyService } from '../services/currency';
 import { useState, useMemo, useEffect } from 'react';
 
@@ -85,10 +92,44 @@ export default function TripDetails() {
         return { settlementsPersonal: personal, settlementsFamily: familyAware };
     }, [expensesInBase, expenses, persons, families, loading]);
 
+    const paidForPersonalRows = useMemo(() => {
+        const list = expensesInBase ?? expenses;
+        const amountKey = expensesInBase ? 'amountInBase' : 'amountInUSD';
+        if (!list || loading) return [];
+        const matrix = calculatePaidForMatrix(list, amountKey);
+        return paidForMatrixToSortedRows(matrix);
+    }, [expensesInBase, expenses, loading]);
+
+    const paidForFamilyRows = useMemo(() => {
+        const list = expensesInBase ?? expenses;
+        const amountKey = expensesInBase ? 'amountInBase' : 'amountInUSD';
+        if (!list || loading || !families || families.length === 0) return [];
+        const matrix = calculatePaidForMatrixFamilyUnits(list, families, amountKey);
+        return paidForMatrixToSortedRows(matrix);
+    }, [expensesInBase, expenses, families, loading]);
+
     if (loading) return <div>Завантаження...</div>;
     if (!trip) return <div>Подорож не знайдено</div>;
 
     const getPersonName = (id) => persons?.find(p => p.id == id)?.name || 'Невідомий';
+
+    const formatSettlementUnitLabel = (unitKey) => {
+        if (unitKey.startsWith('person:')) {
+            return getPersonName(unitKey.slice(7));
+        }
+        if (unitKey.startsWith('family:')) {
+            const fid = unitKey.slice(7);
+            const f = families?.find(x => x.id === fid);
+            if (!f) return 'Сім\'я';
+            const names = (f.memberPersonIds || []).map(pid => getPersonName(pid)).join(', ');
+            const payer = getPersonName(f.payerPersonId);
+            if (f.name && String(f.name).trim()) {
+                return `${String(f.name).trim()} (${names}; платник: ${payer})`;
+            }
+            return `Сім'я: ${names} (платник: ${payer})`;
+        }
+        return unitKey;
+    };
 
     return (
         <div className="trip-details-page">
@@ -108,6 +149,45 @@ export default function TripDetails() {
 
                 {showSettlements && (
                     <div className="settlements-list">
+                        <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1rem' }}>Загальні сплати «за кого» (персонально)</h4>
+                        <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
+                            Сума часток з витрат: хто фактично перекрив чужі долі (рівні частки між обраними в «за кого»).
+                        </p>
+                        {paidForPersonalRows.length === 0 ? (
+                            <p style={{ marginBottom: '1rem' }}>Немає даних для відображення.</p>
+                        ) : (
+                            <ul style={{ marginBottom: '1.25rem' }}>
+                                {paidForPersonalRows.map((row, i) => (
+                                    <li key={`pf-p-${i}`}>
+                                        <strong>{getPersonName(row.from)}</strong> сплатив за <strong>{getPersonName(row.to)}</strong>:{' '}
+                                        {row.amount.toFixed(2)} {baseCurrency}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        {families && families.length > 0 && (
+                            <>
+                                <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1rem' }}>Загальні сплати «за кого» (з урахуванням сімей)</h4>
+                                <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
+                                    Учасники однієї сім&apos;ї зведені в один рядок; внутрішні «сім&apos;я за сім&apos;ю» не показуються.
+                                </p>
+                                {paidForFamilyRows.length === 0 ? (
+                                    <p style={{ marginBottom: '1rem' }}>Немає даних для відображення.</p>
+                                ) : (
+                                    <ul style={{ marginBottom: '1.25rem' }}>
+                                        {paidForFamilyRows.map((row, i) => (
+                                            <li key={`pf-f-${i}`}>
+                                                <strong>{formatSettlementUnitLabel(row.from)}</strong> сплатив за{' '}
+                                                <strong>{formatSettlementUnitLabel(row.to)}</strong>:{' '}
+                                                {row.amount.toFixed(2)} {baseCurrency}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </>
+                        )}
+
                         <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1rem' }}>Персонально</h4>
                         <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
                             Якщо кожен розраховується окремо (без об&apos;єднання в сім&apos;ю).
