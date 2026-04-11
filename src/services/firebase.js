@@ -156,3 +156,30 @@ export function useExpense(expenseId) {
 
     return { expense, loading };
 }
+
+/** @typedef {{ id: string, tripId: string, memberPersonIds: string[], payerPersonId: string, name?: string }} FamilyDoc */
+
+/**
+ * @param {string} tripId
+ * @returns {{ families: FamilyDoc[], loading: boolean }}
+ */
+export function useFamilies(tripId) {
+    const [families, setFamilies] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!tripId) {
+            setLoading(false);
+            return;
+        }
+        const q = query(collection(db, "families"), where("tripId", "==", tripId));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setFamilies(list);
+            setLoading(false);
+        });
+        return () => unsub();
+    }, [tripId]);
+
+    return { families, loading };
+}

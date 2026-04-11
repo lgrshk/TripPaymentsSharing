@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
-import { useTrip, usePersons, useExpenses } from '../services/firebase';
-import { calculateBalances, optimizeSettlements } from '../services/calculations';
+import { useTrip, usePersons, useExpenses, useFamilies } from '../services/firebase';
+import { calculateBalances, optimizeSettlements, optimizeFamilyAwareSettlements } from '../services/calculations';
 import { CurrencyService } from '../services/currency';
 import { useState, useMemo, useEffect } from 'react';
 
@@ -11,11 +11,12 @@ export default function TripDetails() {
     const { trip, loading: loadingTrip } = useTrip(tripId);
     const { persons, loading: loadingPersons } = usePersons(tripId);
     const { expenses, loading: loadingExpenses } = useExpenses(tripId);
+    const { families, loading: loadingFamilies } = useFamilies(tripId);
 
     const [showSettlements, setShowSettlements] = useState(false);
     const [expensesInBase, setExpensesInBase] = useState(null);
 
-    const loading = loadingTrip || loadingPersons || loadingExpenses;
+    const loading = loadingTrip || loadingPersons || loadingExpenses || loadingFamilies;
     const baseCurrency = trip?.baseCurrency || 'USD';
 
     // Convert expenses to trip base currency for balance calculation
@@ -68,15 +69,21 @@ export default function TripDetails() {
         fixRates();
     }, [expenses, loading]);
 
-    // Calculate balances in base currency
-    const { balances, settlements } = useMemo(() => {
+    // Calculate balances in base currency (per-person unchanged); settlements optional family merge
+    const { settlementsPersonal, settlementsFamily } = useMemo(() => {
         const list = expensesInBase ?? expenses;
         const amountKey = expensesInBase ? 'amountInBase' : 'amountInUSD';
-        if (!list || !persons || loading) return { balances: {}, settlements: [] };
+        if (!list || !persons || loading) {
+            return { settlementsPersonal: [], settlementsFamily: [] };
+        }
         const bal = calculateBalances(list, persons, amountKey);
-        const set = optimizeSettlements(bal);
-        return { balances: bal, settlements: set };
-    }, [expensesInBase, expenses, persons, loading]);
+        const personal = optimizeSettlements(bal);
+        const familyAware =
+            families && families.length > 0
+                ? optimizeFamilyAwareSettlements(bal, families)
+                : personal;
+        return { settlementsPersonal: personal, settlementsFamily: familyAware };
+    }, [expensesInBase, expenses, persons, families, loading]);
 
     if (loading) return <div>Завантаження...</div>;
     if (!trip) return <div>Подорож не знайдено</div>;
@@ -101,14 +108,40 @@ export default function TripDetails() {
 
                 {showSettlements && (
                     <div className="settlements-list">
-                        {settlements.length === 0 ? <p>Всі розрахувались!</p> : (
+                        <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1rem' }}>Персонально</h4>
+                        <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
+                            Якщо кожен розраховується окремо (без об&apos;єднання в сім&apos;ю).
+                        </p>
+                        {settlementsPersonal.length === 0 ? (
+                            <p>Всі розрахувались!</p>
+                        ) : (
                             <ul>
-                                {settlements.map((s, i) => (
-                                    <li key={i}>
+                                {settlementsPersonal.map((s, i) => (
+                                    <li key={`p-${i}`}>
                                         <strong>{getPersonName(s.from)}</strong> винен <strong>{getPersonName(s.to)}</strong>: {s.amount.toFixed(2)} {baseCurrency}
                                     </li>
                                 ))}
                             </ul>
+                        )}
+
+                        {families && families.length > 0 && (
+                            <>
+                                <h4 style={{ margin: '1.25rem 0 0.5rem', fontSize: '1rem' }}>З урахуванням сімей</h4>
+                                <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
+                                    Учасники однієї сім&apos;ї зводяться на вказаного платника; суми між усіма ті самі, що й персонально, змінюється лише схема переказів.
+                                </p>
+                                {settlementsFamily.length === 0 ? (
+                                    <p>Всі розрахувались!</p>
+                                ) : (
+                                    <ul>
+                                        {settlementsFamily.map((s, i) => (
+                                            <li key={`f-${i}`}>
+                                                <strong>{getPersonName(s.from)}</strong> винен <strong>{getPersonName(s.to)}</strong>: {s.amount.toFixed(2)} {baseCurrency}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </>
                         )}
                     </div>
                 )}

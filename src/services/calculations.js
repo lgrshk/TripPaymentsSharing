@@ -81,3 +81,42 @@ export function optimizeSettlements(balances) {
 
     return settlements;
 }
+
+/**
+ * For settlement optimization only: merges each family member's net balance into the
+ * designated payer's balance and clears non-payers to zero. Does not change per-person
+ * balances from expenses — use the original `balances` map for that.
+ *
+ * @param {Object} balances - personId -> net amount (same shape as calculateBalances output).
+ * @param {Array<{ payerPersonId: string, memberPersonIds: string[] }>} families
+ * @returns {Object} merged balances copy
+ */
+export function mergeFamilyBalancesForSettlements(balances, families) {
+    const merged = { ...balances };
+    if (!families || families.length === 0) return merged;
+
+    for (const fam of families) {
+        const payerId = fam.payerPersonId;
+        const members = Array.isArray(fam.memberPersonIds) ? fam.memberPersonIds : [];
+        if (!payerId || !members.includes(payerId)) continue;
+
+        let shifted = 0;
+        for (const memberId of members) {
+            if (memberId === payerId) continue;
+            shifted += merged[memberId] ?? 0;
+            merged[memberId] = 0;
+        }
+        merged[payerId] = (merged[payerId] ?? 0) + shifted;
+    }
+    return merged;
+}
+
+/**
+ * Minimizes transfers after consolidating each family's net position onto the payer.
+ * @param {Object} balances - from calculateBalances
+ * @param {Array<{ payerPersonId: string, memberPersonIds: string[] }>} families
+ */
+export function optimizeFamilyAwareSettlements(balances, families) {
+    const merged = mergeFamilyBalancesForSettlements(balances, families);
+    return optimizeSettlements(merged);
+}
