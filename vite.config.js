@@ -8,13 +8,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['apple-touch-icon.png'],
+      includeAssets: ['apple-touch-icon.png', 'favicon-64x64.png'],
       manifest: {
         name: 'Trip Payments Sharing',
         short_name: 'TripPay',
         description: 'Track shared expenses for trips offline.',
-        theme_color: '#2563eb',
-        background_color: '#ffffff',
+        theme_color: '#0083c3',
+        background_color: '#0083c3',
         display: 'standalone',
         start_url: '/',
         icons: [
