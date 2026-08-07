@@ -1,18 +1,25 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { db } from '../services/firebase';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+    db,
+    useTrip,
+    usePersons,
+    useFamilies,
+    addTripMember,
+    removeTripMember,
+    normalizeEmail,
+} from '../services/firebase';
 import { doc, updateDoc, deleteDoc, addDoc, collection, writeBatch, query, where, getDocs } from 'firebase/firestore';
-import { useTrip, usePersons, useFamilies } from '../services/firebase';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function EditTrip() {
     const { id: tripId } = useParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
 
     const { trip, loading: loadingTrip } = useTrip(tripId);
     const { persons: existingPersons, loading: loadingPersons } = usePersons(tripId);
     const { families, loading: loadingFamilies } = useFamilies(tripId);
-
-    console.log('EditTrip:', { tripId, trip, existingPersons });
 
     const [name, setName] = useState('');
     // We generally avoid changing base currency mid-trip as it complicates things, but let's allow renaming.
@@ -22,12 +29,20 @@ export default function EditTrip() {
     const [familyPayerId, setFamilyPayerId] = useState('');
     const [familyName, setFamilyName] = useState('');
     const [familySaving, setFamilySaving] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteBusy, setInviteBusy] = useState(false);
 
     useEffect(() => {
         if (trip) {
             setName(trip.name);
         }
     }, [trip]);
+
+    const myEmail = normalizeEmail(user?.email);
+    const isOwner = Boolean(
+        trip && (trip.ownerId === user?.uid || normalizeEmail(trip.ownerEmail) === myEmail)
+    );
+    const members = Array.isArray(trip?.memberEmails) ? trip.memberEmails : [];
 
     const handleAddPersonInput = () => {
         setNewPersons([...newPersons, '']);
@@ -119,6 +134,10 @@ export default function EditTrip() {
     };
 
     const handleDeleteTrip = async () => {
+        if (!isOwner) {
+            alert('Лише власник може видалити подорож');
+            return;
+        }
         const confirmation = prompt('Щоб видалити подорож і всі дані, введіть "DELETE"');
         if (confirmation === 'DELETE') {
             // Delete expenses
@@ -126,15 +145,15 @@ export default function EditTrip() {
             const expensesSnap = await getDocs(expensesQ);
             const batch = writeBatch(db);
 
-            expensesSnap.forEach(doc => {
-                batch.delete(doc.ref);
+            expensesSnap.forEach(docSnap => {
+                batch.delete(docSnap.ref);
             });
 
             // Delete persons
             const personsQ = query(collection(db, "persons"), where("tripId", "==", tripId));
             const personsSnap = await getDocs(personsQ);
-            personsSnap.forEach(doc => {
-                batch.delete(doc.ref);
+            personsSnap.forEach(docSnap => {
+                batch.delete(docSnap.ref);
             });
 
             const familiesQ = query(collection(db, "families"), where("tripId", "==", tripId));
@@ -152,10 +171,42 @@ export default function EditTrip() {
         }
     };
 
-    if (!trip || loadingPersons || loadingFamilies) return <div>...</div>;
+    const handleInvite = async (e) => {
+        e.preventDefault();
+        if (!isOwner || !inviteEmail.trim()) return;
+        setInviteBusy(true);
+        try {
+            await addTripMember(tripId, inviteEmail);
+            setInviteEmail('');
+        } catch (err) {
+            console.error(err);
+            alert('Не вдалося додати доступ. Перевірте email.');
+        } finally {
+            setInviteBusy(false);
+        }
+    };
+
+    const handleRemoveMember = async (email) => {
+        if (!isOwner) return;
+        if (normalizeEmail(email) === normalizeEmail(trip.ownerEmail)) {
+            alert('Не можна прибрати власника');
+            return;
+        }
+        if (!window.confirm(`Прибрати доступ для ${email}?`)) return;
+        try {
+            await removeTripMember(tripId, email);
+        } catch (err) {
+            console.error(err);
+            alert('Не вдалося прибрати доступ');
+        }
+    };
+
+    if (loadingTrip || loadingPersons || loadingFamilies) return <div>...</div>;
+    if (!trip) return <div>Подорож не знайдено або немає доступу</div>;
 
     return (
         <div className="create-trip-page">
+            <Link to={`/trip/${tripId}`} className="back-link">← Назад</Link>
             <h2>Налаштування подорожі</h2>
             <form onSubmit={handleUpdate}>
                 <div className="form-group">
@@ -166,6 +217,57 @@ export default function EditTrip() {
                         onChange={(e) => setName(e.target.value)}
                         required
                     />
+                </div>
+
+                <div className="form-group access-section">
+                    <label>Доступ (Google акаунти)</label>
+                    <p style={{ fontSize: '0.9rem', color: '#64748b', margin: '0 0 0.75rem' }}>
+                        Люди з цим списком email зможуть відкрити подорож після входу через Google.
+                    </p>
+                    <ul className="member-list">
+                        {members.map((email) => {
+                            const isTripOwner = normalizeEmail(email) === normalizeEmail(trip.ownerEmail);
+                            return (
+                                <li key={email} className="member-item">
+                                    <span>
+                                        {email}
+                                        {isTripOwner ? <span className="owner-badge"> власник</span> : null}
+                                    </span>
+                                    {isOwner && !isTripOwner ? (
+                                        <button
+                                            type="button"
+                                            className="small-text-btn"
+                                            onClick={() => handleRemoveMember(email)}
+                                        >
+                                            Прибрати
+                                        </button>
+                                    ) : null}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {isOwner ? (
+                        <div className="invite-row">
+                            <input
+                                type="email"
+                                value={inviteEmail}
+                                onChange={(e) => setInviteEmail(e.target.value)}
+                                placeholder="email@gmail.com"
+                            />
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={handleInvite}
+                                disabled={inviteBusy}
+                            >
+                                {inviteBusy ? '...' : 'Запросити'}
+                            </button>
+                        </div>
+                    ) : (
+                        <p style={{ fontSize: '0.9rem', color: '#64748b' }}>
+                            Лише власник може змінювати доступ.
+                        </p>
+                    )}
                 </div>
 
                 <div className="form-group">
@@ -265,11 +367,14 @@ export default function EditTrip() {
 
                 <button type="submit" className="primary-button">Зберегти зміни</button>
 
-                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
-
-                <button type="button" onClick={handleDeleteTrip} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.75rem', borderRadius: '8px', width: '100%', cursor: 'pointer' }}>
-                    Видалити подорож
-                </button>
+                {isOwner ? (
+                    <>
+                        <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
+                        <button type="button" onClick={handleDeleteTrip} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.75rem', borderRadius: '8px', width: '100%', cursor: 'pointer' }}>
+                            Видалити подорож
+                        </button>
+                    </>
+                ) : null}
             </form>
         </div>
     );

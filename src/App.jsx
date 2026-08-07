@@ -5,39 +5,24 @@ import TripDetails from './pages/TripDetails'
 import AddExpense from './pages/AddExpense'
 import EditTrip from './pages/EditTrip'
 import EditExpense from './pages/EditExpense'
+import Login from './pages/Login'
 import './index.css'
 
-import { useState, useEffect } from 'react';
-import { auth, signInAnonymously } from './services/firebase';
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 
-function App() {
-    const [authorized, setAuthorized] = useState(false);
+function AppRoutes() {
+    const { user, loading, migrating } = useAuth();
 
-    useEffect(() => {
-        // Sign in anonymously on app start
-        signInAnonymously(auth)
-            .then(() => {
-                console.log("Signed in anonymously");
-                setAuthorized(true);
-            })
-            .catch((error) => {
-                console.error("Auth error", error);
-                // Even if auth fails (e.g. offline), if we have a cached user, it might work?
-                // But generally signInAnonymously needs network once.
-                // However, Firebase Auth persists user. So if already signed in, onAuthStateChanged works.
-            });
+    if (loading || migrating) {
+        return (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>
+                {migrating ? 'Підготовка даних...' : 'Завантаження...'}
+            </div>
+        );
+    }
 
-        // Check if already signed in (persisted)
-        const unsubscribe = auth.onAuthStateChanged((user) => {
-            if (user) {
-                setAuthorized(true);
-            }
-        });
-        return () => unsubscribe();
-    }, []);
-
-    if (!authorized) {
-        return <div style={{ padding: '2rem', textAlign: 'center' }}>Авторизація...</div>;
+    if (!user) {
+        return <Login />;
     }
 
     return (
@@ -53,7 +38,15 @@ function App() {
                 </Routes>
             </div>
         </Router>
-    )
+    );
+}
+
+function App() {
+    return (
+        <AuthProvider>
+            <AppRoutes />
+        </AuthProvider>
+    );
 }
 
 export default App

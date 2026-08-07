@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../services/firebase';
+import { db, normalizeEmail } from '../services/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { CURRENCIES } from '../services/currency';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function CreateTrip() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [name, setName] = useState('');
     const [currency, setCurrency] = useState('USD');
     const [persons, setPersons] = useState(['Я', '']); // Initial 2 persons
@@ -22,21 +24,23 @@ export default function CreateTrip() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!name.trim()) return;
+        if (!name.trim() || !user) return;
+
+        const ownerEmail = normalizeEmail(user.email);
 
         try {
-            // Write to Firestore
             const tripRef = await addDoc(collection(db, "trips"), {
                 name,
                 baseCurrency: currency,
-                startDate: new Date().toISOString()
+                startDate: new Date().toISOString(),
+                ownerId: user.uid,
+                ownerEmail,
+                memberEmails: [ownerEmail],
             });
             const tripId = tripRef.id;
 
-            // Add persons
             const validPersons = persons.filter(p => p.trim() !== '');
             if (validPersons.length > 0) {
-                // Bulk write not strictly necessary for UI, just await Promise.all
                 const promises = validPersons.map(p =>
                     addDoc(collection(db, "persons"), {
                         tripId,

@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null
+        && request.auth.token.email != null;
+    }
+
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isLegacyOwner() {
+      return isSignedIn() && userEmail() == 'oleg.roshka@gmail.com';
+    }
+
+    function tripDoc(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)).data;
+    }
+
+    function isTripMember(tripId) {
+      return isSignedIn()
+        && 'memberEmails' in tripDoc(tripId)
+        && userEmail() in tripDoc(tripId).memberEmails;
+    }
+
+    function isTripOwnerData(data) {
+      return isSignedIn() && (
+        request.auth.uid == data.ownerId
+        || userEmail() == data.ownerEmail
+      );
+    }
+
+    match /trips/{tripId} {
+      // Members see their trips; legacy owner can read all (for one-time migration)
+      allow read: if isSignedIn() && (
+        ('memberEmails' in resource.data && userEmail() in resource.data.memberEmails)
+        || isLegacyOwner()
+      );
+
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerEmail == userEmail()
+        && userEmail() in request.resource.data.memberEmails;
+
+      allow update: if isSignedIn() && (
+        // Claim orphan trips during migration
+        (isLegacyOwner() && !('ownerEmail' in resource.data))
+        ||
+        // Owner may change anything except transferring ownership silently wrong —
+        // keep ownerId/ownerEmail stable
+        (isTripOwnerData(resource.data)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.ownerEmail == resource.data.ownerEmail)
+        ||
+        // Members may edit trip fields but not access list / ownership
+        (userEmail() in resource.data.memberEmails
+          && request.resource.data.memberEmails == resource.data.memberEmails
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.ownerEmail == resource.data.ownerEmail)
+      );
+
+      allow delete: if isTripOwnerData(resource.data);
+    }
+
+    match /persons/{personId} {
+      allow read, delete: if isTripMember(resource.data.tripId);
+      allow create: if isTripMember(request.resource.data.tripId);
+      allow update: if isTripMember(resource.data.tripId)
+        && request.resource.data.tripId == resource.data.tripId;
+    }
+
+    match /expenses/{expenseId} {
+      allow read, delete: if isTripMember(resource.data.tripId);
+      allow create: if isTripMember(request.resource.data.tripId);
+      allow update: if isTripMember(resource.data.tripId)
+        && request.resource.data.tripId == resource.data.tripId;
+    }
+
+    match /families/{familyId} {
+      allow read, delete: if isTripMember(resource.data.tripId);
+      allow create: if isTripMember(request.resource.data.tripId);
+      allow update: if isTripMember(resource.data.tripId)
+        && request.resource.data.tripId == resource.data.tripId;
+    }
+  }
+}

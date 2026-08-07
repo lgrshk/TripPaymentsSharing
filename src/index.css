@@ -228,3 +228,111 @@ select {
   padding: 1rem;
   border-radius: var(--radius);
 }
+
+/* Auth / access */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 45%, #e2e8f0 100%);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface-color);
+  border-radius: 12px;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e2e8f0;
+}
+
+.login-card h1 {
+  margin-bottom: 0.5rem;
+}
+
+.login-subtitle {
+  color: #64748b;
+  margin-bottom: 1.5rem;
+}
+
+.google-signin-button {
+  margin-top: 0;
+}
+
+.login-error {
+  color: var(--danger-color);
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.home-header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.user-email {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.sign-out-button {
+  width: auto;
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius);
+}
+
+.member-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.member-item:last-child {
+  border-bottom: none;
+}
+
+.owner-badge {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.invite-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.invite-row input {
+  flex: 1;
+}
+
+.invite-row .secondary-button {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+input[type="email"] {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  box-sizing: border-box;
+}
