@@ -72,9 +72,13 @@ export default function EditExpense() {
         setLoading(true);
         try {
             const rateToUSD = await CurrencyService.getUsdRate(currency, date);
-            const distinctRate = rateToUSD || 0;
+            if (!rateToUSD) {
+                alert('Не вдалося отримати курс валют. Перевірте інтернет і спробуйте ще раз.');
+                return;
+            }
+            const distinctRate = rateToUSD;
             const val = parseFloat(amount);
-            const valInUSD = distinctRate ? val / distinctRate : 0;
+            const valInUSD = val / distinctRate;
 
             await updateDoc(doc(db, "expenses", expenseId), {
                 date,

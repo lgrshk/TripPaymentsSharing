@@ -70,17 +70,21 @@ export default function AddExpense() {
 
         setLoading(true);
         try {
-            // Get Rate (don't block if fails)
             let rateToUSD = null;
             try {
                 rateToUSD = await CurrencyService.getUsdRate(currency, date);
             } catch (e) {
-                console.warn("Could not fetch rate (offline?)", e);
+                console.warn("Could not fetch rate", e);
             }
 
-            const distinctRate = rateToUSD || 0;
+            if (!rateToUSD) {
+                alert('Не вдалося отримати курс валют. Перевірте інтернет і спробуйте ще раз.');
+                return;
+            }
+
+            const distinctRate = rateToUSD;
             const val = parseFloat(amount);
-            const valInUSD = distinctRate ? val / distinctRate : 0;
+            const valInUSD = val / distinctRate;
 
             await addDoc(collection(db, "expenses"), {
                 tripId,
@@ -150,6 +154,15 @@ export default function AddExpense() {
                         onChange={e => setDate(e.target.value)}
                         required
                     />
+                </div>
+
+                <div className="form-group">
+                    <label>Обмінний курс (1 USD)</label>
+                    <div style={{ fontSize: '0.9rem', color: '#64748b', background: '#f1f5f9', padding: '0.5rem', borderRadius: '4px' }}>
+                        {currency === 'USD' ? '1.00 USD' : (
+                            rate ? `~ ${rate} ${currency}` : 'Не знайдено/Завантаження...'
+                        )}
+                    </div>
                 </div>
 
                 <div className="form-group">

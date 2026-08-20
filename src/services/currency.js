@@ -1,34 +1,73 @@
 import { db } from '../db/db';
 import { format } from 'date-fns';
 
-const BASE_URL = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies';
+const LOOKBACK_DAYS = 7;
 
-// Currencies to support
 export const CURRENCIES = {
     USD: 'USD',
     EUR: 'EUR',
     PLN: 'PLN',
     UAH: 'UAH',
-    LKR: 'LKR', // Sri Lankan Rupee
+    LKR: 'LKR',
 };
+
+function shiftIsoDate(dateStr, days) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const dt = new Date(year, month - 1, day + days);
+    return format(dt, 'yyyy-MM-dd');
+}
+
+function rateUrlsFor(dateTag) {
+    return [
+        `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateTag}/v1/currencies/usd.json`,
+        `https://${dateTag}.currency-api.pages.dev/v1/currencies/usd.json`,
+    ];
+}
+
+async function fetchUsdTable(dateTag) {
+    for (const url of rateUrlsFor(dateTag)) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) continue;
+            const data = await response.json();
+            if (data?.usd && typeof data.usd === 'object') return data.usd;
+        } catch (e) {
+            console.warn('Failed to fetch rates from', url, e);
+        }
+    }
+    return null;
+}
+
+async function cacheUsdRates(dateStr, usdMap) {
+    const codes = Object.keys(CURRENCIES).filter((c) => c !== 'USD');
+    await Promise.all(
+        codes.map(async (code) => {
+            const rate = usdMap[code.toLowerCase()];
+            if (rate) {
+                await db.rates.put({ date: dateStr, currency: code, rateToUSD: rate });
+            }
+        })
+    );
+}
+
+async function getClosestCachedRate(currency, dateStr) {
+    const all = await db.rates.toArray();
+    const same = all.filter((r) => r.currency === currency && r.rateToUSD > 0);
+    if (same.length === 0) return null;
+    const target = new Date(`${dateStr}T00:00:00`).getTime();
+    same.sort((a, b) => {
+        const distA = Math.abs(new Date(`${a.date}T00:00:00`).getTime() - target);
+        const distB = Math.abs(new Date(`${b.date}T00:00:00`).getTime() - target);
+        return distA - distB;
+    });
+    return same[0].rateToUSD;
+}
 
 export const CurrencyService = {
     async getRate(fromCurrency, toCurrency, date) {
         if (fromCurrency === toCurrency) return 1;
 
-        // Normalize date to YYYY-MM-DD
         const dateStr = format(date, 'yyyy-MM-dd');
-
-        // Check DB first
-        // We store rates relative to USD in the DB
-        // e.g. { date: '2023-05-01', currency: 'EUR', rateToUSD: 1.1 } (1 EUR = 1.1 USD)
-        // Or maybe store USD based rates: { date: '...', currency: 'EUR', rate: 0.9 } (1 USD = 0.9 EUR)
-        // Let's stick to: How much 1 unit of CURRENCY is worth in USD.
-
-        // Wait, standard APIs usually give 1 USD = X Currency.
-        // Let's store "rateToUSD" as: Value of 1 USD in that currency. 
-        // So if 1 USD = 39 UAH, rateToUSD = 39.
-
         const usdToFrom = await this.getUsdRate(fromCurrency, dateStr);
         const usdToTo = await this.getUsdRate(toCurrency, dateStr);
 
@@ -37,53 +76,40 @@ export const CurrencyService = {
             return null;
         }
 
-        // Convert 'from' to USD, then USD to 'to'
-        // Amount in USD = AmountInFrom / usdToFrom
-        // Amount in To = AmountInUSD * usdToTo
-        // Rate = AmountInTo / AmountInFrom = usdToTo / usdToFrom
-
         return usdToTo / usdToFrom;
     },
 
     async getUsdRate(currency, dateStr) {
         if (currency === 'USD') return 1;
+        if (!dateStr) return null;
 
-        // Check local DB
         const cached = await db.rates.get({ date: dateStr, currency });
-        if (cached) return cached.rateToUSD;
+        if (cached?.rateToUSD) return cached.rateToUSD;
 
-        // Fetch from API if online
         if (navigator.onLine) {
-            try {
-                // This API structure is usually /date/currencies/usd.json
-                // Or /latest/currencies/usd.json
-                // fawazahmed0 API supports dates.
-                // https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/usd.json
+            const dateTags = [dateStr];
+            for (let i = 1; i <= LOOKBACK_DAYS; i++) {
+                dateTags.push(shiftIsoDate(dateStr, -i));
+            }
+            dateTags.push('latest');
 
-                // Construct URL for historical date. 
-                // Note: The API format is `@{date}/v1/currencies/usd.json`
-                // Ensure dateStr is correct.
-
-                const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/usd.json`;
-
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Network response was not ok');
-
-                const data = await response.json();
-                // data.usd contains rates where 1 USD = X Currency
-
-                const rate = data.usd[currency.toLowerCase()];
+            for (const tag of dateTags) {
+                const usdMap = await fetchUsdTable(tag);
+                if (!usdMap) continue;
+                const rate = usdMap[currency.toLowerCase()];
                 if (rate) {
-                    await db.rates.put({ date: dateStr, currency, rateToUSD: rate });
+                    await cacheUsdRates(dateStr, usdMap);
                     return rate;
                 }
-            } catch (e) {
-                console.error('Failed to fetch rates', e);
             }
         }
 
-        // Fallback? Maybe try to find closest date?
-        // For now, return null
+        const fallback = await getClosestCachedRate(currency, dateStr);
+        if (fallback) {
+            console.warn(`Using closest cached rate for ${currency} on ${dateStr}`);
+            return fallback;
+        }
+
         return null;
     },
 
@@ -98,20 +124,20 @@ export const CurrencyService = {
     async getExpensesInBaseCurrency(expenses, baseCurrency) {
         if (!expenses || expenses.length === 0) return [];
         if (baseCurrency === 'USD') {
-            return expenses.map(e => ({ ...e, amountInBase: e.amountInUSD ?? 0 }));
+            return expenses.map((e) => ({ ...e, amountInBase: e.amountInUSD ?? 0 }));
         }
-        const uniqueDates = [...new Set(expenses.map(e => e.date))];
+        const uniqueDates = [...new Set(expenses.map((e) => e.date))];
         const rateByDate = {};
         await Promise.all(
-            uniqueDates.map(async (dateStr) => {
-                const r = await this.getUsdRate(baseCurrency, dateStr);
-                rateByDate[dateStr] = r || 0;
+            uniqueDates.map(async (d) => {
+                const r = await this.getUsdRate(baseCurrency, d);
+                rateByDate[d] = r || 0;
             })
         );
-        return expenses.map(e => {
+        return expenses.map((e) => {
             const rate = rateByDate[e.date] || 0;
             const amountInBase = (e.amountInUSD ?? 0) * rate;
             return { ...e, amountInBase };
         });
-    }
+    },
 };
