@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Діагностика даних подорожі</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; }
+        h2 { color: #666; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .error { color: #d32f2f; background: #ffebee; padding: 10px; border-radius: 4px; }
+        .success { color: #388e3c; background: #e8f5e9; padding: 10px; border-radius: 4px; }
+        .warning { color: #f57c00; background: #fff3e0; padding: 10px; border-radius: 4px; }
+        pre {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover { background: #1976d2; }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 300px;
+        }
+        .stat {
+            display: inline-block;
+            background: #e3f2fd;
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin: 5px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Діагностика розрахунку боргів</h1>
+    
+    <div class="container">
+        <h2>Крок 1: Введіть ID подорожі</h2>
+        <p>Знайдіть ID вашої подорожі в URL (наприклад: /trip/<strong>abc123xyz</strong>)</p>
+        <input type="text" id="tripId" placeholder="Введіть ID подорожі">
+        <button onclick="loadTripData()">Завантажити дані</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, query, where, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDmWCRo7J_NolDqtphNGBAjQkpEEk7Ipro",
+            authDomain: "trippaymentssharimg.firebaseapp.com",
+            projectId: "trippaymentssharimg",
+            storageBucket: "trippaymentssharimg.firebasestorage.app",
+            messagingSenderId: "33844692758",
+            appId: "1:33844692758:web:86e44b623a344e244a7237"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        function calculateBalances(expenses, persons, amountKey = 'amountInBase') {
+            const balances = {};
+            persons.forEach(p => balances[p.id] = 0);
+
+            expenses.forEach(expense => {
+                const payerId = expense.payerId;
+                const amount = expense[amountKey] ?? expense.amountInUSD ?? 0;
+                const beneficiaries = expense.beneficiaryIds || [];
+
+                if (beneficiaries.length === 0) return;
+
+                const splitAmount = amount / beneficiaries.length;
+
+                beneficiaries.forEach(benId => {
+                    if (benId !== payerId) {
+                        balances[benId] -= splitAmount;
+                        balances[payerId] += splitAmount;
+                    }
+                });
+            });
+
+            return balances;
+        }
+
+        window.loadTripData = async function() {
+            const tripId = document.getElementById('tripId').value.trim();
+            const resultsDiv = document.getElementById('results');
+            
+            if (!tripId) {
+                resultsDiv.innerHTML = '<div class="container error">❌ Будь ласка, введіть ID подорожі</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="container">⏳ Завантаження...</div>';
+
+            try {
+                // Load trip
+                const tripDoc = await getDoc(doc(db, 'trips', tripId));
+                if (!tripDoc.exists()) {
+                    resultsDiv.innerHTML = '<div class="container error">❌ Подорож не знайдено</div>';
+                    return;
+                }
+                const trip = { id: tripDoc.id, ...tripDoc.data() };
+
+                // Load persons
+                const personsSnap = await getDocs(query(collection(db, 'persons'), where('tripId', '==', tripId)));
+                const persons = personsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // Load expenses
+                const expensesSnap = await getDocs(query(collection(db, 'expenses'), where('tripId', '==', tripId)));
+                const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // Calculate balances
+                const balances = calculateBalances(expenses, persons, 'amountInUSD');
+
+                // Display results
+                let html = '<div class="container success">✅ Дані успішно завантажено</div>';
+
+                // Trip info
+                html += '<div class="container">';
+                html += '<h2>📍 Подорож</h2>';
+                html += `<p><strong>Назва:</strong> ${trip.name || 'Без назви'}</p>`;
+                html += `<p><strong>Базова валюта:</strong> ${trip.baseCurrency || 'USD'}</p>`;
+                html += '</div>';
+
+                // Persons
+                html += '<div class="container">';
+                html += '<h2>👥 Учасники</h2>';
+                html += `<div class="stat">Всього: ${persons.length}</div>`;
+                if (persons.length === 0) {
+                    html += '<div class="warning">⚠️ Немає учасників! Додайте учасників до подорожі.</div>';
+                } else {
+                    html += '<ul>';
+                    persons.forEach(p => {
+                        html += `<li><strong>${p.name}</strong> (ID: ${p.id})</li>`;
+                    });
+                    html += '</ul>';
+                }
+                html += '</div>';
+
+                // Expenses
+                html += '<div class="container">';
+                html += '<h2>💰 Витрати</h2>';
+                html += `<div class="stat">Всього: ${expenses.length}</div>`;
+                if (expenses.length === 0) {
+                    html += '<div class="warning">⚠️ Немає витрат! Додайте витрату.</div>';
+                } else {
+                    expenses.forEach((exp, idx) => {
+                        const hasIssue = !exp.beneficiaryIds || exp.beneficiaryIds.length === 0;
+                        html += `<div style="background: ${hasIssue ? '#fff3e0' : '#f5f5f5'}; padding: 10px; margin: 10px 0; border-radius: 4px;">`;
+                        html += `<strong>Витрата ${idx + 1}:</strong> ${exp.description || 'Без опису'}<br>`;
+                        html += `<strong>Сума:</strong> ${exp.amount} ${exp.currency}`;
+                        if (exp.amountInUSD) {
+                            html += ` (≈ $${exp.amountInUSD.toFixed(2)})`;
+                        }
+                        html += `<br>`;
+                        html += `<strong>Дата:</strong> ${exp.date}<br>`;
+                        html += `<strong>Хто платив:</strong> ${persons.find(p => p.id === exp.payerId)?.name || 'Невідомо'} (${exp.payerId})<br>`;
+                        html += `<strong>Бенефіціари:</strong> `;
+                        if (!exp.beneficiaryIds || exp.beneficiaryIds.length === 0) {
+                            html += '<span style="color: red;">❌ НЕМАЄ БЕНЕФІЦІАРІВ - ЦЕ ПРОБЛЕМА!</span>';
+                        } else {
+                            html += `${exp.beneficiaryIds.length} осіб: `;
+                            const names = exp.beneficiaryIds.map(id => persons.find(p => p.id === id)?.name || id).join(', ');
+                            html += names;
+                        }
+                        html += `<br><pre style="font-size: 11px; margin-top: 5px;">beneficiaryIds: ${JSON.stringify(exp.beneficiaryIds)}</pre>`;
+                        html += '</div>';
+                    });
+                }
+                html += '</div>';
+
+                // Balances
+                html += '<div class="container">';
+                html += '<h2>⚖️ Розрахунок балансів</h2>';
+                
+                const hasNonZeroBalance = Object.values(balances).some(v => Math.abs(v) > 0.01);
+                
+                if (!hasNonZeroBalance) {
+                    html += '<div class="warning">⚠️ Всі баланси дорівнюють 0 - тому показується "Всі розрахувались"</div>';
+                } else {
+                    html += '<div class="success">✅ Є неврівноважені баланси</div>';
+                }
+                
+                html += '<table style="width: 100%; border-collapse: collapse; margin-top: 15px;">';
+                html += '<tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left;">Учасник</th><th style="padding: 8px; text-align: right;">Баланс (USD)</th><th style="padding: 8px; text-align: left;">Статус</th></tr>';
+                
+                persons.forEach(p => {
+                    const balance = balances[p.id] || 0;
+                    const status = balance > 0.01 ? '💚 Їм винні' : balance < -0.01 ? '🔴 Винен' : '⚪ Розрахований';
+                    const color = balance > 0.01 ? '#e8f5e9' : balance < -0.01 ? '#ffebee' : '#f5f5f5';
+                    html += `<tr style="background: ${color};">`;
+                    html += `<td style="padding: 8px;"><strong>${p.name}</strong></td>`;
+                    html += `<td style="padding: 8px; text-align: right; font-family: monospace;">${balance.toFixed(2)}</td>`;
+                    html += `<td style="padding: 8px;">${status}</td>`;
+                    html += '</tr>';
+                });
+                html += '</table>';
+                html += '</div>';
+
+                // Diagnosis
+                html += '<div class="container">';
+                html += '<h2>🩺 Діагноз</h2>';
+                
+                const issues = [];
+                if (persons.length === 0) issues.push('Немає учасників');
+                if (expenses.length === 0) issues.push('Немає витрат');
+                
+                expenses.forEach((exp, idx) => {
+                    if (!exp.beneficiaryIds || exp.beneficiaryIds.length === 0) {
+                        issues.push(`Витрата ${idx + 1} не має бенефіціарів`);
+                    }
+                });
+                
+                if (!hasNonZeroBalance && expenses.length > 0 && persons.length > 0) {
+                    const allExpensesSame = expenses.every(e => e.payerId === expenses[0].payerId);
+                    const allBeneficiariesSame = expenses.every(e => 
+                        JSON.stringify(e.beneficiaryIds?.sort()) === JSON.stringify(expenses[0].beneficiaryIds?.sort())
+                    );
+                    
+                    if (allExpensesSame && allBeneficiariesSame) {
+                        issues.push('Всі витрати з однаковим платником і бенефіціарами - можливо, платник також є єдиним бенефіціаром?');
+                    }
+                }
+
+                if (issues.length === 0) {
+                    html += '<div class="success">✅ Проблем не виявлено. Дані виглядають коректно.</div>';
+                } else {
+                    html += '<div class="error"><strong>Виявлені проблеми:</strong><ul>';
+                    issues.forEach(issue => html += `<li>${issue}</li>`);
+                    html += '</ul></div>';
+                    
+                    html += '<div style="margin-top: 15px;"><strong>Рекомендації:</strong><ul>';
+                    if (persons.length === 0) {
+                        html += '<li>Додайте учасників подорожі через налаштування подорожі</li>';
+                    }
+                    if (expenses.length === 0) {
+                        html += '<li>Додайте витрату через кнопку "+ Додати"</li>';
+                    }
+                    if (expenses.some(e => !e.beneficiaryIds || e.beneficiaryIds.length === 0)) {
+                        html += '<li><strong style="color: red;">КРИТИЧНО:</strong> При додаванні витрати обов\'язково виберіть бенефіціарів ("За кого?")</li>';
+                    }
+                    html += '</ul></div>';
+                }
+                html += '</div>';
+
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error(error);
+                resultsDiv.innerHTML = `<div class="container error">❌ Помилка: ${error.message}</div>`;
+            }
+        };
+    </script>
+</body>
+</html>

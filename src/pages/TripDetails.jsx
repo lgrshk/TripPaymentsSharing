@@ -83,8 +83,28 @@ export default function TripDetails() {
         if (!list || !persons || loading) {
             return { settlementsPersonal: [], settlementsFamily: [] };
         }
+        
+        // Debug logging
+        console.log('📊 Розрахунок балансів:');
+        console.log('  Витрат:', list.length);
+        console.log('  Учасників:', persons.length);
+        console.log('  Ключ суми:', amountKey);
+        
+        // Check for expenses without beneficiaries
+        const expensesWithoutBeneficiaries = list.filter(e => !e.beneficiaryIds || e.beneficiaryIds.length === 0);
+        if (expensesWithoutBeneficiaries.length > 0) {
+            console.warn('⚠️ Витрат без бенефіціарів:', expensesWithoutBeneficiaries.length);
+            expensesWithoutBeneficiaries.forEach(e => {
+                console.warn(`  - ${e.description}: beneficiaryIds =`, e.beneficiaryIds);
+            });
+        }
+        
         const bal = calculateBalances(list, persons, amountKey);
+        console.log('  Баланси:', bal);
+        
         const personal = optimizeSettlements(bal);
+        console.log('  Розрахунки персональні:', personal);
+        
         const familyAware =
             families && families.length > 0
                 ? optimizeFamilyAwareSettlements(bal, families)
@@ -149,6 +169,16 @@ export default function TripDetails() {
 
                 {showSettlements && (
                     <div className="settlements-list">
+                        {!expenses || expenses.length === 0 ? (
+                            <div style={{ padding: '1rem', background: '#fff3e0', borderRadius: '4px', marginBottom: '1rem' }}>
+                                ⚠️ Немає витрат. Додайте витрату, щоб побачити розрахунки.
+                            </div>
+                        ) : !persons || persons.length === 0 ? (
+                            <div style={{ padding: '1rem', background: '#ffebee', borderRadius: '4px', marginBottom: '1rem' }}>
+                                ❌ Немає учасників. Додайте учасників через налаштування подорожі.
+                            </div>
+                        ) : null}
+
                         <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1rem' }}>Загальні сплати «за кого» (персонально)</h4>
                         <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
                             Сума часток з витрат: хто фактично перекрив чужі долі (рівні частки між обраними в «за кого»).
