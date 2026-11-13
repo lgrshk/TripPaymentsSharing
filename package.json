@@ -2,34 +2,18 @@
   "name": "trip-payments-sharing",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "clsx": "^2.1.0",
-    "date-fns": "^3.6.0",
-    "dexie": "^3.2.4",
-    "dexie-react-hooks": "^1.1.7",
-    "firebase": "^12.9.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.22.3",
-    "tailwind-merge": "^2.2.2",
-    "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.66",
-    "@types/react-dom": "^18.2.22",
-    "@vitejs/plugin-react": "^4.2.1",
-    "eslint": "^8.57.0",
-    "eslint-plugin-react": "^7.34.1",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.6",
-    "vite": "^5.2.0",
-    "vite-plugin-pwa": "^0.19.8"
+    "dev:trip": "npm run dev -w trip-payments",
+    "dev:debt": "npm run dev -w debt-book",
+    "build:trip": "npm run build -w trip-payments",
+    "build:debt": "npm run build -w debt-book",
+    "preview:trip": "npm run preview -w trip-payments",
+    "preview:debt": "npm run preview -w debt-book",
+    "deploy:debt": "npm run build:debt && npx vercel deploy --prod --yes",
+    "deploy:debt:firebase": "npm run build:debt && npx firebase-tools deploy --only hosting:debt --project trippaymentssharimg --non-interactive",
+    "deploy:trip": "npm run build:trip && npx firebase-tools deploy --only hosting:trip --project trippaymentssharimg --non-interactive"
   }
 }

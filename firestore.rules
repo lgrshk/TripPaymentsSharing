@@ -83,5 +83,34 @@ service cloud.firestore {
       allow update: if isTripMember(resource.data.tripId)
         && request.resource.data.tripId == resource.data.tripId;
     }
+
+    // DebtBook — personal debt ledger (owner-only)
+    match /debtContacts/{contactId} {
+      allow read, delete: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerEmail == userEmail();
+      allow update: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.ownerEmail == resource.data.ownerEmail;
+    }
+
+    match /debtEntries/{entryId} {
+      allow read, delete: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.contactId is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0;
+      allow update: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.contactId == resource.data.contactId
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0;
+    }
   }
 }

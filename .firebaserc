@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "trippaymentssharimg"
-  }
+  },
+  "targets": {
+    "trippaymentssharimg": {
+      "hosting": {
+        "trip": [
+          "trippaymentssharimg"
+        ],
+        "debt": [
+          "trippaymentssharimg-debtbook"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
